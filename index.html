@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+        <meta name="description" content="Parallel Graph Coloring Project" />
+        <meta name="author" content="svattiku, balasubs" />
+        <title>Parallel Graph Coloring Project</title>
+        <!-- Bootstrap core CSS -->
+        <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet" />
+        <style>
+            .header {
+                padding: 80px 0;
+                background-color: #f8f9fa;
+                margin-bottom: 30px;
+            }
+            .section {
+                margin-bottom: 40px;
+            }
+            .timeline-item {
+                position: relative;
+                padding-bottom: 20px;
+                border-left: 2px solid #0d6efd;
+                padding-left: 20px;
+                margin-left: 10px;
+            }
+            .timeline-item:before {
+                content: '';
+                position: absolute;
+                left: -9px;
+                top: 0;
+                width: 16px;
+                height: 16px;
+                border-radius: 50%;
+                background-color: #0d6efd;
+            }
+            .heading-underline {
+                border-bottom: 3px solid #0d6efd;
+                padding-bottom: 10px;
+                display: inline-block;
+                margin-bottom: 20px;
+            }
+        </style>
+    </head>
+    <body>
+        <!-- Navigation-->
+        <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+            <div class="container">
+                <a class="navbar-brand" href="#">Parallel Graph Coloring</a>
+                <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation"><span class="navbar-toggler-icon"></span></button>
+                <div class="collapse navbar-collapse" id="navbarSupportedContent">
+                    <ul class="navbar-nav ms-auto mb-2 mb-lg-0">
+                        <li class="nav-item"><a class="nav-link" href="#summary">Summary</a></li>
+                        <li class="nav-item"><a class="nav-link" href="#background">Background</a></li>
+                        <li class="nav-item"><a class="nav-link" href="#challenges">Challenges</a></li>
+                        <li class="nav-item"><a class="nav-link" href="#resources">Resources</a></li>
+                        <li class="nav-item"><a class="nav-link" href="#goals">Goals</a></li>
+                        <li class="nav-item"><a class="nav-link" href="#schedule">Schedule</a></li>
+                    </ul>
+                </div>
+            </div>
+        </nav>
+        
+        <!-- Header-->
+        <header class="header">
+            <div class="container">
+                <div class="row">
+                    <div class="col-lg-12 text-center">
+                        <h1 class="display-4">Parallel Graph Coloring</h1>
+                        <p class="lead">Implementation and analysis of parallel versions of the greedy graph coloring algorithm</p>
+                        <div class="mt-3">
+                            <span class="badge bg-secondary me-2">OpenMP</span>
+                            <span class="badge bg-secondary me-2">MPI</span>
+                            <span class="badge bg-secondary">C/C++</span>
+                        </div>
+                        <p class="mt-3">Andrew Id: svattiku, balasubs</p>
+                    </div>
+                </div>
+            </div>
+        </header>
+        
+        <!-- Page content-->
+        <div class="container">
+            <!-- Summary Section -->
+            <section id="summary" class="section">
+                <h2 class="heading-underline">Summary</h2>
+                <p>For our final project, we plan to implement and analyze parallel versions of the greedy graph coloring algorithm, focusing on the performance characteristics of different parallelization strategies.</p>
+            </section>
+            
+            <!-- Background Section -->
+            <section id="background" class="section">
+                <h2 class="heading-underline">Background</h2>
+                <p>Graph coloring assigns colors to nodes such that no adjacent nodes share the same color. This problem has many applications, including register allocation in compilers, scheduling problems, and frequency assignment in wireless networks. The minimum graph coloring problem (finding the coloring with the fewest colors) is NP-Complete, so approximation algorithms are typically used.</p>
+                <p>The greedy approach is one of the most common approximation algorithms for graph coloring. It assigns the lowest possible color to each vertex while ensuring no conflicts with already-colored neighbors. While simple, this sequential approach can be slow for large graphs, and computation increases as the graph size increases.</p>
+                <p>This project will explore two primary parallelization approaches:</p>
+                <div class="row mt-4">
+                    <div class="col-md-6">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <h5 class="card-title">Independent Set Coloring</h5>
+                                <p class="card-text">Identifying sets of vertices that can be colored simultaneously without conflicts.</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <h5 class="card-title">Domain Decomposition</h5>
+                                <p class="card-text">Partitioning the graph into subgraphs and coloring them in parallel, with special handling for boundary vertices.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <p class="mt-4">We will implement these approaches using both OpenMP (for shared memory parallelism) and MPI (for distributed memory parallelism).</p>
+            </section>
+            
+            <!-- Challenges Section -->
+            <section id="challenges" class="section">
+                <h2 class="heading-underline">Challenges</h2>
+                <div class="row">
+                    <div class="col-md-4 mb-4">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <h5 class="card-title">Load Balancing</h5>
+                                <p class="card-text">Graphs often have non-uniform structures, leading to load imbalance when parallelized. We will investigate dynamic load balancing techniques to distribute work evenly among processors, particularly for irregular graphs.</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4 mb-4">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <h5 class="card-title">Dependency Management</h5>
+                                <p class="card-text">The primary challenge in parallelizing graph coloring is managing dependencies between vertices. Since a vertex's color depends on its neighbors, naive parallelization can lead to race conditions where neighboring vertices receive the same color.</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4 mb-4">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <h5 class="card-title">Performance-Quality Tradeoffs</h5>
+                                <p class="card-text">Parallel implementations may use more colors than the sequential greedy algorithm. We will analyze this tradeoff between coloring quality and performance improvement, and explore techniques to minimize the color count while maintaining speedup.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- Resources Section -->
+            <section id="resources" class="section">
+                <h2 class="heading-underline">Resources & Platform Choice</h2>
+                <p>Our approach will start with developing a C/C++ implementation of the sequential greedy graph coloring algorithm as our foundation. Once we have a working sequential version, we'll extend it to create a parallel implementation. We'll conduct our initial development on the GHC machines, but for comprehensive performance evaluation of our final implementations, we plan to utilize the PSC machines with their superior core counts.</p>
+                <p>We'll leverage multi-core GHC and PSC machines for our implementation. C/C++ was selected based on our prior assignment experience with OpenMP and OpenMPI-frameworks well-suited to the parallel approaches described in our background section.</p>
+            </section>
+            
+            <!-- Goals Section -->
+            <section id="goals" class="section">
+                <h2 class="heading-underline">Goals and Deliverables</h2>
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="card h-100">
+                            <div class="card-header bg-primary text-white">
+                                Plan to Achieve (Baseline)
+                            </div>
+                            <div class="card-body">
+                                <ul class="list-group list-group-flush">
+                                    <li class="list-group-item">Sequential implementation of greedy graph coloring</li>
+                                    <li class="list-group-item">OpenMP implementation with reasonable speedup on shared memory systems</li>
+                                    <li class="list-group-item">Basic MPI implementation for distributed memory systems</li>
+                                    <li class="list-group-item">Performance analysis across different graph types and system configurations</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card h-100">
+                            <div class="card-header bg-success text-white">
+                                Hope to Achieve (Stretch Goals)
+                            </div>
+                            <div class="card-body">
+                                <ul class="list-group list-group-flush">
+                                    <li class="list-group-item">Near-linear speedup for certain graph classes</li>
+                                    <li class="list-group-item">Hybrid OpenMP/MPI implementation for cluster computing</li>
+                                    <li class="list-group-item">Optimization techniques to reduce the color count in parallel implementations</li>
+                                    <li class="list-group-item">Adaptive algorithm selection based on graph characteristics</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- Schedule Section -->
+            <section id="schedule" class="section">
+                <h2 class="heading-underline">Schedule</h2>
+                <div class="timeline">
+                    <div class="timeline-item">
+                        <h5>Week 1</h5>
+                        <ul>
+                            <li>Implement and optimize sequential greedy graph coloring</li>
+                            <li>Set up testing framework and graph datasets</li>
+                        </ul>
+                    </div>
+                    <div class="timeline-item">
+                        <h5>Week 2</h5>
+                        <ul>
+                            <li>Develop OpenMP implementation</li>
+                            <li>Benchmark and analyze performance on shared memory systems</li>
+                        </ul>
+                    </div>
+                    <div class="timeline-item">
+                        <h5>Week 3</h5>
+                        <ul>
+                            <li>Begin MPI implementation</li>
+                            <li>Prepare and submit project milestone report</li>
+                        </ul>
+                    </div>
+                    <div class="timeline-item">
+                        <h5>Week 4</h5>
+                        <ul>
+                            <li>Complete MPI implementation</li>
+                            <li>Conduct comparative analysis</li>
+                        </ul>
+                    </div>
+                    <div class="timeline-item">
+                        <h5>Week 5</h5>
+                        <ul>
+                            <li>Finalize optimizations</li>
+                            <li>Prepare final report and presentation materials</li>
+                            <li>Prepare for project poster session</li>
+                        </ul>
+                    </div>
+                    <div class="timeline-item">
+                        <h5>Final Deliverables</h5>
+                        <ul>
+                            <li>Project Final Report</li>
+                            <li>Project Poster Session</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Footer-->
+            <footer class="py-5 bg-dark mt-5">
+                <div class="container">
+                    <p class="m-0 text-center text-white">© 2025 Parallel Graph Coloring Project</p>
+                </div>
+            </footer>
+        </div>
+        
+        <!-- Bootstrap core JS-->
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
+    </body>
+</html>
