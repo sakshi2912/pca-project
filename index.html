@@ -1,4 +1,4 @@
-Put your HTML text here<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
     <head>
         <meta charset="utf-8" />
@@ -55,6 +55,7 @@ Put your HTML text here<!DOCTYPE html>
                         <li class="nav-item"><a class="nav-link" href="#parallelization">Parallelization Approaches</a></li>
                         <li class="nav-item"><a class="nav-link" href="#challenges">Challenges</a></li>
                         <li class="nav-item"><a class="nav-link" href="#resources">Resources</a></li>
+                        <li class="nav-item"><a class="nav-link" href="#platform">Platform Choice</a></li>
                         <li class="nav-item"><a class="nav-link" href="#goals">Goals</a></li>
                         <li class="nav-item"><a class="nav-link" href="#schedule">Schedule</a></li>
                     </ul>
@@ -68,14 +69,13 @@ Put your HTML text here<!DOCTYPE html>
                 <div class="row">
                     <div class="col-lg-12 text-center">
                         <h1 class="display-4">Parallel Graph Coloring</h1>
-                        <p class="lead">Advanced Parallel Implementation of Graph Coloring Algorithms</p>
+                        <p class="lead">Andrew Id: svattiku, balasubs</p>
+                        <p class="lead">URL: pca-project</p>
                         <div class="mt-3">
                             <span class="badge bg-secondary me-2">OpenMP</span>
                             <span class="badge bg-secondary me-2">MPI</span>
-                            <span class="badge bg-secondary me-2">C/C++</span>
-                            <span class="badge bg-secondary">Transactional Memory</span>
+                            <span class="badge bg-secondary">C/C++</span>
                         </div>
-                        <p class="mt-3">Andrew Id: svattiku, balasubs</p>
                     </div>
                 </div>
             </div>
@@ -86,223 +86,190 @@ Put your HTML text here<!DOCTYPE html>
             <!-- Summary Section -->
             <section id="summary" class="section">
                 <h2 class="heading-underline">Summary</h2>
-                <p>Our final project will implement and analyze multiple parallel approaches to the graph coloring problem, with a novel focus on a transactional memory-inspired approach using optimistic execution and conflict resolution.</p>
+                <p>For our final project, we will implement and analyze multiple parallel approaches to the graph coloring problem. We'll develop traditional parallelization strategies alongside a focus on a novel transactional memory-inspired approach that uses optimistic execution with conflict resolution.</p>
             </section>
             
             <!-- Background Section -->
             <section id="background" class="section">
                 <h2 class="heading-underline">Background</h2>
-                <p>Graph coloring assigns colors to nodes such that no adjacent nodes share the same color. This problem has critical applications in register allocation, scheduling, and frequency assignment in wireless networks. The minimum graph coloring problem is NP-Complete, necessitating approximation algorithms.</p>
-                <p>The greedy approach is a common approximation algorithm, assigning the lowest possible color to each vertex while avoiding conflicts with already-colored neighbors. However, this sequential method becomes increasingly slow for large graphs.</p>
+                <p>Graph coloring assigns colors to nodes such that no adjacent nodes share the same color. This problem has many applications, including register allocation in compilers, scheduling problems, and frequency assignment in wireless networks. The minimum graph coloring problem (finding the coloring with the fewest colors) is NP-Complete, so approximation algorithms are typically used.</p>
+                <p>The greedy approach is one of the most common approximation algorithms for graph coloring. It assigns the lowest possible color to each vertex while ensuring no conflicts with already-colored neighbors. While simple, this sequential approach can be slow for large graphs, and computation increases as the graph size increases.</p>
             </section>
 
             <!-- Parallelization Approaches Section -->
             <section id="parallelization" class="section">
                 <h2 class="heading-underline">Parallelization Approaches</h2>
-                <div class="row">
-                    <div class="col-md-4 mb-4">
-                        <div class="card h-100">
-                            <div class="card-body">
-                                <h5 class="card-title">Independent Set Coloring</h5>
-                                <p class="card-text">Identifies sets of vertices that can be colored simultaneously without conflicts. Implemented using OpenMP for thread-level parallelism and MPI for distributed identification and coloring.</p>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-4 mb-4">
-                        <div class="card h-100">
-                            <div class="card-body">
-                                <h5 class="card-title">Domain Decomposition</h5>
-                                <p class="card-text">Partitions the graph into subgraphs and colors them in parallel, with special handling for boundary vertices using OpenMP and MPI.</p>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-4 mb-4">
-                        <div class="card h-100">
-                            <div class="card-body">
-                                <h5 class="card-title">Transactional Memory-Inspired Approach</h5>
-                                <p class="card-text">Innovative approach using optimistic parallel coloring with post-coloring conflict detection and resolution, mimicking transactional memory systems.</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                <h3>Traditional Parallel Approaches</h3>
+                <p>We will implement the following traditional approaches using both OpenMP (for shared memory parallelism) and MPI (for distributed memory parallelism) to evaluate their performance characteristics, scalability, and effectiveness across different graph structures:</p>
                 
-                <div class="card mt-4">
-                    <div class="card-header">
-                        Novel Transactional Memory-Inspired Approach
+                <div class="row">
+                    <div class="col-md-6 mb-4">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <h5 class="card-title">1. Independent Set Coloring</h5>
+                                <p><strong>Concept:</strong> Identifying sets of vertices that can be colored simultaneously without conflicts</p>
+                                <p><strong>Implementation:</strong> Using OpenMP for thread-level parallelism and MPI for distributed identification and coloring of independent sets</p>
+                                <p><strong>Challenge:</strong> Efficiently identifying maximal independent sets in parallel</p>
+                            </div>
+                        </div>
                     </div>
-                    <div class="card-body">
-                        <h6>Key Characteristics</h6>
-                        <ul>
-                            <li><strong>Concept:</strong> Optimistically color vertices in parallel without initial synchronization</li>
-                            <li><strong>Conflict Detection:</strong> Parallel scan to identify adjacent vertices with same color</li>
-                            <li><strong>Resolution Strategies:</strong>
-                                <ul>
-                                    <li>Priority-based resolution</li>
-                                    <li>Timestamp ordering</li>
-                                    <li>Probabilistic resolution with exponential backoff</li>
-                                </ul>
-                            </li>
-                        </ul>
-                        <p>Unlike traditional approaches that prevent conflicts through synchronization, this method allows conflicts and resolves them afterward, enabling more independent thread operation.</p>
+                    <div class="col-md-6 mb-4">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <h5 class="card-title">2. Domain Decomposition</h5>
+                                <p><strong>Concept:</strong> Partitioning the graph into subgraphs and coloring them in parallel</p>
+                                <p><strong>Implementation:</strong> Using OpenMP for shared memory decomposition and MPI for distributed partitioning with special handling for boundary vertices</p>
+                                <p><strong>Challenge:</strong> Managing cross-partition conflicts while maintaining load balance</p>
+                            </div>
+                        </div>
                     </div>
                 </div>
+
+                <h3>Novel Transactional Memory-Inspired Approach</h3>
+                <h4>3. Optimistic Parallel Coloring with Conflict Resolution</h4>
+                <p><strong>Concept:</strong> Mimicking transactional memory systems by allowing threads to color vertices optimistically in parallel without synchronization, then detecting and resolving conflicts afterward</p>
+                
+                <h5>Implementation</h5>
+                <ul>
+                    <li>For shared memory: Using OpenMP with custom atomic operations for conflict detection and resolution</li>
+                    <li>For distributed memory: Using MPI with specialized message-passing protocols for cross-process conflict management</li>
+                </ul>
+
+                <h5>Key Components</h5>
+                <h6>Conflict Detection</h6>
+                <p>After initial coloring, a parallel scan over edges identifies pairs of adjacent vertices with the same color, recording conflicts in dedicated data structures. This post-processing approach uses atomic operations to mark conflicts without serializing the detection process, enabling efficient bulk conflict identification.</p>
+
+                <h6>Resolution Strategies</h6>
+                <p>Several sophisticated approaches will be explored including:</p>
+                <ul>
+                    <li>Priority-based resolution (higher priority vertices keep colors)</li>
+                    <li>Timestamp ordering (earlier colored vertices maintain colors)</li>
+                    <li>Probabilistic resolution with exponential backoff for recoloring attempts</li>
+                </ul>
+                <p>These strategies balance conflict resolution quality against computational overhead.</p>
+
+                <h6>Performance Optimizations</h6>
+                <p>We will explore optimizations with:</p>
+                <ul>
+                    <li>Versioned color assignments to track changes</li>
+                    <li>Contention management to reduce hotspots</li>
+                    <li>Careful memory consistency model design</li>
+                </ul>
+                <p>Fine-grained state tracking monitors whether vertices are in tentative, committed, or conflicted states throughout the coloring process.</p>
+
+                <h4>Relation to Hardware Lock Elision (HLE)</h4>
+                <p>Our approach shares important conceptual foundations with HLE, a feature in modern processors that enables threads to execute critical sections concurrently without locks:</p>
+                <ul>
+                    <li>Both use optimistic execution assuming conflicts are rare</li>
+                    <li>While HLE leverages hardware transactional memory to detect conflicts at the processor level, our approach implements similar capabilities in software</li>
+                    <li>For systems with processors supporting Intel TSX instructions, we will explore potential hybrid implementations that leverage actual hardware transactional memory support for conflict detection</li>
+                </ul>
+                <p>This connection highlights how our software approach mirrors hardware-level optimization techniques in modern processor architectures.</p>
+
+                <h4>Key Differences Between Approaches</h4>
+                <ul>
+                    <li><strong>Philosophy:</strong> Traditional approaches prevent conflicts through synchronization; transactional approach allows conflicts and resolves them afterward.</li>
+                    <li><strong>Synchronization:</strong> Traditional approaches require coordinated coloring; transactional approach enables independent thread operation.</li>
+                    <li><strong>Conflict Handling:</strong> Traditional approaches avoid conflicts by design; transactional approach detects and resolves conflicts post-coloring.</li>
+                    <li><strong>Execution Model:</strong>
+                        <ul>
+                            <li>Independent Set colors non-adjacent vertices simultaneously</li>
+                            <li>Domain Decomposition partitions and colors with boundary handling</li>
+                            <li>Transactional approach uses optimistic coloring with conflict resolution</li>
+                        </ul>
+                    </li>
+                </ul>
             </section>
-            
+
             <!-- Challenges Section -->
             <section id="challenges" class="section">
                 <h2 class="heading-underline">Challenges</h2>
-                <div class="row">
-                    <div class="col-md-4 mb-4">
-                        <div class="card h-100">
-                            <div class="card-body">
-                                <h5 class="card-title">Load Balancing</h5>
-                                <p class="card-text">Addressing non-uniform graph structures to distribute work evenly among processors, especially for irregular graphs.</p>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-4 mb-4">
-                        <div class="card h-100">
-                            <div class="card-body">
-                                <h5 class="card-title">Dependency Management</h5>
-                                <p class="card-text">Managing vertex dependencies to prevent race conditions where neighboring vertices receive the same color.</p>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-4 mb-4">
-                        <div class="card h-100">
-                            <div class="card-body">
-                                <h5 class="card-title">Performance-Quality Tradeoffs</h5>
-                                <p class="card-text">Balancing parallel implementation efficiency with color count minimization and speedup maintenance.</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="card">
-                    <div class="card-body">
-                        <h5>Additional Specific Challenges</h5>
-                        <ul>
-                            <li>Balancing optimistic coloring with conflict resolution overhead</li>
-                            <li>Developing scalable conflict detection mechanisms</li>
-                            <li>Controlling color count during resolution processes</li>
-                        </ul>
-                    </div>
-                </div>
+                <h3>Load Balancing</h3>
+                <p>Graphs often have non-uniform structures, leading to load imbalance when parallelized. We will investigate dynamic load balancing techniques to distribute work evenly among processors, particularly for irregular graphs.</p>
+
+                <h3>Dependency Management</h3>
+                <p>The primary challenge in parallelizing graph coloring is managing dependencies between vertices. Since a vertex's color depends on its neighbors, naive parallelization can lead to race conditions where neighboring vertices receive the same color.</p>
+
+                <h3>Performance-Quality Tradeoffs</h3>
+                <p>Parallel implementations may use more colors than the sequential greedy algorithm. We will analyze this tradeoff between coloring quality and performance improvement, and explore techniques to minimize the color count while maintaining speedup.</p>
+
+                <h3>Additional Specific Challenges</h3>
+                <ul>
+                    <li>Balancing Optimism: Finding the right balance between optimistic coloring and conflict resolution overhead</li>
+                    <li>Scalable Conflict Detection: Making conflict detection efficient as thread count increases</li>
+                    <li>Color Count Control: Preventing resolution strategies from significantly increasing color count</li>
+                </ul>
             </section>
-            
+
             <!-- Resources Section -->
             <section id="resources" class="section">
-                <h2 class="heading-underline">Resources & Platform Choice</h2>
-                <p>Our implementation will start with a C/C++ sequential greedy graph coloring algorithm, which will be extended to parallel versions. Initial development will occur on GHC machines, with comprehensive performance evaluation planned on PSC machines with superior core counts.</p>
-                <p>We selected C/C++ based on prior experience with OpenMP and OpenMPI, frameworks well-suited to our parallel approaches.</p>
+                <h2 class="heading-underline">Resources</h2>
+                <p>Our approach will start with developing a C/C++ implementation of the sequential greedy graph coloring algorithm as our foundation. Once we have a working sequential version, we'll extend it to create a parallel implementation. We'll conduct our initial development on the GHC machines, but for comprehensive performance evaluation of our final implementations, we plan to utilize the PSC machines with their superior core counts.</p>
             </section>
-            
-            <!-- Goals Section -->
+
+            <!-- Platform Choice Section -->
+            <section id="platform" class="section">
+                <h2 class="heading-underline">Platform Choice</h2>
+                <p>We'll leverage multi-core GHC and PSC machines for our implementation. C/C++ was selected based on our prior assignment experience with OpenMP and OpenMPI-frameworks well-suited to the parallel approaches described in our background section.</p>
+            </section>
+
+            <!-- Goals and Deliverables Section -->
             <section id="goals" class="section">
                 <h2 class="heading-underline">Goals and Deliverables</h2>
-                <div class="row">
-                    <div class="col-md-6">
-                        <div class="card h-100">
-                            <div class="card-header bg-primary text-white">
-                                Plan to Achieve (Baseline)
-                            </div>
-                            <div class="card-body">
-                                <ul class="list-group list-group-flush">
-                                    <li class="list-group-item">Sequential greedy graph coloring implementation</li>
-                                    <li class="list-group-item">OpenMP shared memory implementation</li>
-                                    <li class="list-group-item">Basic MPI distributed memory implementation</li>
-                                    <li class="list-group-item">Transactional memory-inspired approach with:
-                                        <ul>
-                                            <li>Optimistic parallel coloring</li>
-                                            <li>Conflict detection system</li>
-                                            <li>Priority and timestamp resolution strategies</li>
-                                        </ul>
-                                    </li>
-                                    <li class="list-group-item">Performance analysis across graph types</li>
+                <h3>Plan to Achieve (Baseline)</h3>
+                <ul>
+                    <li>Sequential implementation of greedy graph coloring</li>
+                    <li>OpenMP implementation with reasonable speedup on shared memory systems</li>
+                    <li>Basic MPI implementation for distributed memory systems</li>
+                    <li>Implementation of transactional memory-inspired approach with:
+                        <ul>
+                            <li>Optimistic parallel coloring mechanism</li>
+                            <li>Conflict detection and recording system</li>
+                            <li>Two conflict resolution strategies:
+                                <ul>
+                                    <li>Priority-based resolution (higher priority vertices keep colors)</li>
+                                    <li>Timestamp ordering (earlier colored vertices maintain colors)</li>
                                 </ul>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-6">
-                        <div class="card h-100">
-                            <div class="card-header bg-success text-white">
-                                Hope to Achieve (Stretch Goals)
-                            </div>
-                            <div class="card-body">
-                                <ul class="list-group list-group-flush">
-                                    <li class="list-group-item">Near-linear speedup for sparse graphs</li>
-                                    <li class="list-group-item">Advanced cache utilization optimization</li>
-                                    <li class="list-group-item">Minimize color count in parallel implementations</li>
-                                    <li class="list-group-item">Develop adaptive framework for strategy selection</li>
-                                    <li class="list-group-item">Hybrid OpenMP/MPI implementation</li>
-                                </ul>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                            </li>
+                        </ul>
+                    </li>
+                    <li>Performance analysis across different graph types and system configurations</li>
+                </ul>
+
+                <h3>Hope to Achieve (Stretch Goals)</h3>
+                <ul>
+                    <li>Achieve near-linear speedup for sparse graph classes by optimizing cache utilization and reducing synchronization overhead</li>
+                    <li>Develop advanced heuristics to minimize color count in parallel implementations while maintaining performance</li>
+                    <li>Implement an adaptive framework that automatically selects the optimal parallelization strategy based on graph density, size, and available hardware</li>
+                </ul>
             </section>
-            
+
             <!-- Schedule Section -->
             <section id="schedule" class="section">
                 <h2 class="heading-underline">Schedule</h2>
-                <div class="timeline">
-                    <div class="timeline-item">
-                        <h5>Week 1</h5>
-                        <ul>
-                            <li>Implement and optimize sequential greedy graph coloring</li>
-                            <li>Set up testing framework and graph datasets</li>
-                        </ul>
-                    </div>
-                    <div class="timeline-item">
-                        <h5>Week 2</h5>
-                        <ul>
-                            <li>Develop traditional parallel algorithm implementations</li>
-                            <li>Benchmark shared memory systems</li>
-                            <li>Explore transactional memory conflict detection strategies</li>
-                        </ul>
-                    </div>
-                    <div class="timeline-item">
-                        <h5>Week 3</h5>
-                        <ul>
-                            <li>Prepare and submit project milestone report</li>
-                            <li>Continue transactional memory approach development</li>
-                            <li>Implement initial conflict resolution strategies</li>
-                        </ul>
-                    </div>
-                    <div class="timeline-item">
-                        <h5>Week 4</h5>
-                        <ul>
-                            <li>Complete transactional memory approach</li>
-                            <li>Conduct comparative performance analysis</li>
-                            <li>Refine conflict detection and resolution mechanisms</li>
-                        </ul>
-                    </div>
-                    <div class="timeline-item">
-                        <h5>Week 5</h5>
-                        <ul>
-                            <li>Finalize optimizations</li>
-                            <li>Prepare final report and presentation materials</li>
-                            <li>Prepare for project poster session</li>
-                        </ul>
-                    </div>
-                    <div class="timeline-item">
-                        <h5>Final Deliverables</h5>
-                        <ul>
-                            <li>Final Project Report (April 28th)</li>
-                            <li>Project Poster Session (April 29th)</li>
-                        </ul>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Footer-->
-            <footer class="py-5 bg-dark mt-5">
-                <div class="container">
-                    <p class="m-0 text-center text-white">© 2025 Parallel Graph Coloring Project</p>
-                </div>
-            </footer>
-        </div>
-        
-        <!-- Bootstrap core JS-->
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
-    </body>
-</html>
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Week</th>
+                            <th>To-Do</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Week 1</td>
+                            <td>
+                                <ul>
+                                    <li>Implement and optimize sequential greedy graph coloring</li>
+                                    <li>Set up testing framework and graph datasets</li>
+                                </ul>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>Week 2</td>
+                            <td>
+                                <ul>
+                                    <li>Develop traditional parallel algorithm implementation</li>
+                                    <li>Benchmark and analyze performance on shared memory systems</li>
+                                    <li>Explore transactional memory conflict detection strategies</li>
+                                </ul>
+                            </td>
