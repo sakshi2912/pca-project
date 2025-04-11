@@ -53,13 +53,13 @@ make graphs
 ### Sequential Coloring
 
 ```bash
-./sequential_coloring <graph_file> [output_file]
+./graphcolor_seq <graph_file> [output_file]
 ```
 
 ### OpenMP Coloring
 
 ```bash
-./openmp_coloring <graph_file> [output_file] [num_threads]
+./graphcolor_omp <graph_file> [output_file] [num_threads]
 ```
 
 ## Running Benchmarks
