@@ -1,0 +1,1020 @@
+#include "stm-coloring.h"
+#include <algorithm>
+#include <string.h>
+#include <mutex>
+#include <iostream>
+#include <memory>
+#include <queue>
+#include <vector>
+#include <omp.h>
+#include <unordered_set>
+#include <atomic>
+#include <unordered_map>
+#include <random>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <fstream>
+#include <sstream>
+#include <unistd.h>
+#include <chrono>
+#include <iomanip>
+
+// Typedefs for clarity and consistency
+typedef int graphNode;
+typedef int color;
+
+// Thread timing data structure
+struct ThreadTiming {
+    int thread_id;
+    double start_time;
+    double end_time;
+    size_t nodes_processed;
+    size_t retries;
+    
+    ThreadTiming() : thread_id(-1), start_time(0), end_time(0), nodes_processed(0), retries(0) {}
+};
+
+// Function to print thread timing statistics
+void printThreadTimings(const std::vector<ThreadTiming>& timings) {
+    std::cout << "\n===== Per-Thread Performance Statistics =====\n";
+    std::cout << std::setw(10) << "Thread ID" 
+              << std::setw(15) << "Time (sec)" 
+              << std::setw(15) << "Nodes" 
+              << std::setw(15) << "Nodes/sec"
+              << std::setw(15) << "Retries"
+              << std::setw(15) << "Retry ratio" << std::endl;
+    
+    double total_time = 0.0;
+    size_t total_nodes = 0;
+    size_t total_retries = 0;
+    
+    for (const auto& timing : timings) {
+        double thread_time = timing.end_time - timing.start_time;
+        double nodes_per_sec = timing.nodes_processed > 0 ? timing.nodes_processed / thread_time : 0.0;
+        double retry_ratio = timing.nodes_processed > 0 ? 
+                            static_cast<double>(timing.retries) / timing.nodes_processed : 0.0;
+        
+        std::cout << std::setw(10) << timing.thread_id
+                  << std::setw(15) << std::fixed << std::setprecision(4) << thread_time
+                  << std::setw(15) << timing.nodes_processed
+                  << std::setw(15) << std::fixed << std::setprecision(1) << nodes_per_sec
+                  << std::setw(15) << timing.retries
+                  << std::setw(15) << std::fixed << std::setprecision(3) << retry_ratio
+                  << std::endl;
+        
+        total_time += thread_time;
+        total_nodes += timing.nodes_processed;
+        total_retries += timing.retries;
+    }
+    
+    // Calculate averages and totals
+    double avg_time = total_time / timings.size();
+    double avg_nodes = static_cast<double>(total_nodes) / timings.size();
+    double avg_retries = static_cast<double>(total_retries) / timings.size();
+    double avg_retry_ratio = total_nodes > 0 ? static_cast<double>(total_retries) / total_nodes : 0.0;
+    
+    std::cout << "\nAverages across " << timings.size() << " threads:" << std::endl;
+    std::cout << "  Time: " << std::fixed << std::setprecision(4) << avg_time << " sec" << std::endl;
+    std::cout << "  Nodes: " << avg_nodes << std::endl;
+    std::cout << "  Retries: " << avg_retries << " (" << std::fixed << std::setprecision(3) 
+              << avg_retry_ratio << " per node)" << std::endl;
+    
+    std::cout << "\nOverall parallelism efficiency: " 
+              << std::fixed << std::setprecision(2) 
+              << (total_time / (timings[0].end_time - timings[0].start_time)) 
+              << "x" << std::endl;
+    
+    std::cout << "============================================\n";
+}
+
+// Constants
+constexpr size_t READ_BUFFER_SIZE = 1024 * 1024; // 1MB buffer for file reading
+
+// Thread-local storage with custom pool to reduce allocation/deallocation overhead
+class TLSColorPool {
+private:
+    static constexpr size_t POOL_SIZE = 16; // Number of pools per thread
+    struct Pool {
+        bool* forbidden_colors;
+        size_t size;
+        bool in_use;
+        
+        Pool() : forbidden_colors(nullptr), size(0), in_use(false) {}
+        ~Pool() {
+            if (forbidden_colors != nullptr) {
+                free(forbidden_colors);
+                forbidden_colors = nullptr;
+            }
+        }
+    };
+    
+    // Array of pools
+    std::array<Pool, POOL_SIZE> pools;
+    bool initialized;
+    
+public:
+    TLSColorPool() : initialized(false) {}
+    
+    ~TLSColorPool() {
+        // Nothing needed here - pools clean themselves up
+    }
+    
+    void initialize() {
+        if (!initialized) {
+            for (size_t i = 0; i < POOL_SIZE; i++) {
+                pools[i].forbidden_colors = nullptr;
+                pools[i].size = 0;
+                pools[i].in_use = false;
+            }
+            initialized = true;
+        }
+    }
+    
+    bool* acquire(size_t size) {
+        if (!initialized) initialize();
+        
+        // Find an available pool with sufficient size
+        for (size_t i = 0; i < POOL_SIZE; i++) {
+            if (!pools[i].in_use) {
+                if (pools[i].forbidden_colors == nullptr || pools[i].size < size) {
+                    // Allocate or resize
+                    if (pools[i].forbidden_colors != nullptr) {
+                        free(pools[i].forbidden_colors);
+                    }
+                    
+                    // Align allocation to cache line
+                    void* ptr = nullptr;
+                    if (posix_memalign(&ptr, 64, size * sizeof(bool)) != 0) {
+                        std::cerr << "Memory allocation failed" << std::endl;
+                        exit(1);
+                    }
+                    
+                    pools[i].forbidden_colors = static_cast<bool*>(ptr);
+                    pools[i].size = size;
+                }
+                
+                pools[i].in_use = true;
+                memset(pools[i].forbidden_colors, 0, size * sizeof(bool));
+                return pools[i].forbidden_colors;
+            }
+        }
+        
+        // If all pools are in use, allocate a new temporary buffer
+        void* ptr = nullptr;
+        if (posix_memalign(&ptr, 64, size * sizeof(bool)) != 0) {
+            std::cerr << "Memory allocation failed" << std::endl;
+            exit(1);
+        }
+        bool* tmp = static_cast<bool*>(ptr);
+        memset(tmp, 0, size * sizeof(bool));
+        return tmp;
+    }
+    
+    void release(bool* buffer) {
+        if (!initialized) return;
+        
+        // Check if buffer belongs to any pool
+        for (size_t i = 0; i < POOL_SIZE; i++) {
+            if (pools[i].forbidden_colors == buffer) {
+                pools[i].in_use = false;
+                return;
+            }
+        }
+        
+        // If not found in pool, it was a temporary allocation
+        free(buffer);
+    }
+};
+
+// Thread-local storage for color arrays
+thread_local TLSColorPool tls_color_pool;
+
+// Better memory-mapped file reading
+graphNode readGraphFromFile(const std::string& filename,
+                         std::vector<graphNode>& nodes,
+                         std::vector<std::pair<graphNode, graphNode>>& edges) {
+    nodes.clear();
+    edges.clear();
+    
+    // Use memory-mapped IO for large files
+    struct stat sb;
+    if (stat(filename.c_str(), &sb) == -1) {
+        std::cerr << "Error: Cannot stat file " << filename << std::endl;
+        return -1;
+    }
+    
+    if (sb.st_size > 100 * 1024 * 1024) { // Use mmap for files > 100MB
+        int fd = open(filename.c_str(), O_RDONLY);
+        if (fd == -1) {
+            std::cerr << "Error: Cannot open file " << filename << std::endl;
+            return -1;
+        }
+        
+        void* mapped = mmap(NULL, sb.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+        if (mapped == MAP_FAILED) {
+            close(fd);
+            std::cerr << "Error: Cannot mmap file " << filename << std::endl;
+            return -1;
+        }
+        
+        const char* fileContent = static_cast<const char*>(mapped);
+        const char* end = fileContent + sb.st_size;
+        const char* lineStart = fileContent;
+        
+        // Pre-allocate based on file size estimate
+        size_t estLines = sb.st_size / 20; // Rough estimate
+        nodes.reserve(estLines / 3);
+        edges.reserve(estLines * 2 / 3);
+        
+        graphNode maxNode = 0;
+        
+        while (lineStart < end) {
+            const char* lineEnd = lineStart;
+            while (lineEnd < end && *lineEnd != '\n') lineEnd++;
+            
+            std::string line(lineStart, lineEnd);
+            if (!line.empty() && line[0] != '#') {
+                std::istringstream iss(line);
+                graphNode n1, n2;
+                if (iss >> n1 >> n2) {
+                    nodes.push_back(n1);
+                    nodes.push_back(n2);
+                    edges.emplace_back(n1, n2);
+                    maxNode = std::max(maxNode, std::max(n1, n2));
+                }
+            }
+            
+            lineStart = lineEnd + 1;
+            if (lineStart >= end) break;
+        }
+        
+        // Sort and remove duplicates from nodes
+        std::sort(nodes.begin(), nodes.end());
+        nodes.erase(std::unique(nodes.begin(), nodes.end()), nodes.end());
+        
+        munmap(mapped, sb.st_size);
+        close(fd);
+        
+        return maxNode;
+    } else {
+        // For smaller files, use buffered IO
+        std::ifstream file(filename);
+        if (!file.is_open()) {
+            std::cerr << "Error: Cannot open file " << filename << std::endl;
+            return -1;
+        }
+        
+        // Pre-allocate vectors based on file size
+        size_t estLines = sb.st_size / 20;
+        nodes.reserve(estLines / 3);
+        edges.reserve(estLines * 2 / 3);
+        
+        graphNode maxNode = 0;
+        std::vector<graphNode> nodeSet; // To track unique nodes
+        nodeSet.reserve(estLines / 2);
+        
+        char buffer[READ_BUFFER_SIZE];
+        std::string line;
+        
+        while (file.getline(buffer, READ_BUFFER_SIZE)) {
+            line = buffer;
+            if (!line.empty() && line[0] != '#') {
+                std::istringstream iss(line);
+                graphNode n1, n2;
+                if (iss >> n1 >> n2) {
+                    nodeSet.push_back(n1);
+                    nodeSet.push_back(n2);
+                    edges.emplace_back(n1, n2);
+                    maxNode = std::max(maxNode, std::max(n1, n2));
+                }
+            }
+        }
+        
+        // Sort and remove duplicates from nodes
+        std::sort(nodeSet.begin(), nodeSet.end());
+        nodes.resize(std::unique(nodeSet.begin(), nodeSet.end()) - nodeSet.begin());
+        std::copy(nodeSet.begin(), nodeSet.begin() + nodes.size(), nodes.begin());
+        
+        file.close();
+        return maxNode;
+    }
+}
+
+// Custom hash table for better performance on graph operations
+template<typename Key, typename Value>
+class FastHashMap {
+private:
+    struct Bucket {
+        Key key;
+        Value value;
+        bool occupied;
+        
+        Bucket() : occupied(false) {}
+    };
+    
+    std::vector<Bucket> buckets;
+    size_t size_;
+    float load_factor_;
+    size_t threshold_;
+    
+public:
+    FastHashMap(size_t initial_capacity = 16, float load_factor = 0.75f)
+        : load_factor_(load_factor), size_(0) {
+        buckets.resize(initial_capacity);
+        threshold_ = static_cast<size_t>(initial_capacity * load_factor);
+    }
+    
+    ~FastHashMap() {
+        // Vector handles cleanup
+    }
+    
+    void clear() {
+        for (auto& bucket : buckets) {
+            bucket.occupied = false;
+        }
+        size_ = 0;
+    }
+    
+    size_t size() const {
+        return size_;
+    }
+    
+    bool empty() const {
+        return size_ == 0;
+    }
+    
+    void reserve(size_t capacity) {
+        if (capacity > buckets.size()) {
+            rehash(capacity);
+        }
+    }
+    
+    Value& operator[](const Key& key) {
+        if (size_ >= threshold_) {
+            rehash(buckets.size() * 2);
+        }
+        
+        size_t idx = hash_function(key) % buckets.size();
+        size_t original_idx = idx;
+        
+        while (true) {
+            if (!buckets[idx].occupied) {
+                // New entry
+                buckets[idx].key = key;
+                buckets[idx].occupied = true;
+                size_++;
+                return buckets[idx].value;
+            }
+            
+            if (buckets[idx].key == key) {
+                // Found existing entry
+                return buckets[idx].value;
+            }
+            
+            // Linear probing
+            idx = (idx + 1) % buckets.size();
+            if (idx == original_idx) {
+                // Table is full, should never happen due to load factor
+                rehash(buckets.size() * 2);
+                return operator[](key);
+            }
+        }
+    }
+    
+    // Iterator support for range-based for loops
+    class iterator {
+    private:
+        FastHashMap* map;
+        size_t index;
+        
+    public:
+        iterator(FastHashMap* m, size_t idx) : map(m), index(idx) {
+            // Find first occupied bucket
+            while (index < map->buckets.size() && !map->buckets[index].occupied) {
+                index++;
+            }
+        }
+        
+        std::pair<const Key&, Value&> operator*() {
+            return {map->buckets[index].key, map->buckets[index].value};
+        }
+        
+        iterator& operator++() {
+            index++;
+            while (index < map->buckets.size() && !map->buckets[index].occupied) {
+                index++;
+            }
+            return *this;
+        }
+        
+        bool operator!=(const iterator& other) const {
+            return index != other.index;
+        }
+    };
+    
+    iterator begin() {
+        return iterator(this, 0);
+    }
+    
+    iterator end() {
+        return iterator(this, buckets.size());
+    }
+    
+private:
+    size_t hash_function(const Key& key) const {
+        return std::hash<Key>{}(key);
+    }
+    
+    void rehash(size_t new_capacity) {
+        std::vector<Bucket> old_buckets = std::move(buckets);
+        buckets.resize(new_capacity);
+        threshold_ = static_cast<size_t>(new_capacity * load_factor_);
+        size_ = 0;
+        
+        for (const auto& bucket : old_buckets) {
+            if (bucket.occupied) {
+                (*this)[bucket.key] = bucket.value;
+            }
+        }
+    }
+};
+
+// Optimized color finding function
+color findBestColor(size_t node_idx, const std::vector<color>& node_colors, 
+                   const std::vector<bool>& colored,
+                   const std::vector<std::vector<size_t>>& neighbor_indices,
+                   bool allow_new_colors = false, color current_max = 0) {
+    
+    // Get a buffer from the pool
+    bool* forbidden = tls_color_pool.acquire(MAX_COLORS);
+    
+    // Mark forbidden colors from neighbors
+    const auto& neighbors = neighbor_indices[node_idx];
+    for (size_t nb_idx : neighbors) {
+        if (nb_idx < colored.size() && colored[nb_idx]) {
+            color c = node_colors[nb_idx];
+            if (c >= 0 && c < MAX_COLORS) {
+                forbidden[c] = true;
+            }
+        }
+    }
+    
+    // Find first available color
+    color selected = 0;
+    while (selected < MAX_COLORS && forbidden[selected]) {
+        selected++;
+    }
+    
+    // Handle special cases
+    if (selected >= MAX_COLORS && allow_new_colors) {
+        selected = current_max + 1;
+    } else if (selected >= MAX_COLORS) {
+        // Fallback: choose color with least conflicts
+        int min_conflicts = std::numeric_limits<int>::max();
+        for (color c = 0; c < MAX_COLORS; c++) {
+            int conflicts = 0;
+            for (size_t nb_idx : neighbors) {
+                if (nb_idx < colored.size() && colored[nb_idx] && node_colors[nb_idx] == c) {
+                    conflicts++;
+                }
+            }
+            if (conflicts < min_conflicts) {
+                min_conflicts = conflicts;
+                selected = c;
+            }
+        }
+    }
+    
+    // Release the buffer back to the pool
+    tls_color_pool.release(forbidden);
+    
+    return selected;
+}
+
+// Implementation of derived classes with minimal overhead
+LibITMColorGraph::LibITMColorGraph(int iterations, bool try_bipartite)
+    : STMColorGraph(STMType::Libitm, iterations, try_bipartite) {}
+
+TL2ColorGraph::TL2ColorGraph(int iterations, bool try_bipartite)
+    : STMColorGraph(STMType::TL2, iterations, try_bipartite) {}
+
+// Constructor with minimal initialization
+STMColorGraph::STMColorGraph(STMType type, int iterations, bool try_bipartite) 
+    : stm_type(type),
+      max_iterations(iterations), 
+      detect_bipartite(try_bipartite),
+      global_max_color(0) {
+    
+    // Initialize TLS pool
+    tls_color_pool.initialize();
+    
+    const char* type_names[] = {"LibITM", "TL2", "Hybrid", "TMGraph"};
+    std::cout << "STM Graph Coloring (" << type_names[static_cast<int>(type)] << ")\n";
+    std::cout << "Max iterations: " << max_iterations << "\n";
+    std::cout << "Bipartite detection: " << (detect_bipartite ? "enabled" : "disabled") << "\n";
+}
+
+// Optimized destructor to address the main hotspot (32.1%)
+STMColorGraph::~STMColorGraph() {
+    // Nothing to do - all member variables handle their own cleanup efficiently
+}
+
+// Optimized graph building with reduced map operations
+void STMColorGraph::buildGraph(
+    std::vector<graphNode> &nodes,
+    std::vector<std::pair<graphNode, graphNode>> &pairs,
+    std::unordered_map<graphNode, std::vector<graphNode>> &graph) {
+    
+    std::cout << "Building graph with optimized algorithm..." << std::endl;
+    
+    // Pre-allocate graph with appropriate capacity to avoid rehashes
+    graph.clear();
+    graph.reserve(nodes.size() * 1.5);  // Reserve with extra headroom
+    
+    // Find max node ID for potential vector-based approach
+    graphNode max_node_id = 0;
+    for (auto node : nodes) {
+        max_node_id = std::max(max_node_id, node);
+    }
+    
+    // Use direct vector indexing if node IDs are dense enough
+    bool use_direct_index = (max_node_id < nodes.size() * 3);
+    std::vector<std::vector<graphNode>> direct_index;
+    
+    if (use_direct_index) {
+        direct_index.resize(max_node_id + 1);
+        for (auto node : nodes) {
+            direct_index[node].reserve(16); // Reserve space for typical adjacency list
+        }
+    } else {
+        // Initialize graph with all nodes
+        for (auto node : nodes) {
+            graph[node]; // Create empty entry for each node
+        }
+    }
+    
+    // Process edges directly
+    for (const auto& edge : pairs) {
+        if (edge.first < 0 || edge.second < 0 || edge.first == edge.second) {
+            continue;
+        }
+        
+        if (use_direct_index) {
+            if (edge.first <= max_node_id && edge.second <= max_node_id) {
+                auto& neighbors1 = direct_index[edge.first];
+                auto& neighbors2 = direct_index[edge.second];
+                
+                // Add edges in both directions if not already present
+                if (std::find(neighbors1.begin(), neighbors1.end(), edge.second) == neighbors1.end()) {
+                    neighbors1.push_back(edge.second);
+                }
+                
+                if (std::find(neighbors2.begin(), neighbors2.end(), edge.first) == neighbors2.end()) {
+                    neighbors2.push_back(edge.first);
+                }
+            }
+        } else {
+            auto& neighbors1 = graph[edge.first];
+            auto& neighbors2 = graph[edge.second];
+            
+            // Add edges in both directions if not already present
+            if (std::find(neighbors1.begin(), neighbors1.end(), edge.second) == neighbors1.end()) {
+                neighbors1.push_back(edge.second);
+            }
+            
+            if (std::find(neighbors2.begin(), neighbors2.end(), edge.first) == neighbors2.end()) {
+                neighbors2.push_back(edge.first);
+            }
+        }
+    }
+    
+    // If we used direct indexing, copy back to the map
+    if (use_direct_index) {
+        for (auto node : nodes) {
+            if (node <= max_node_id) {
+                graph[node] = std::move(direct_index[node]);
+            }
+        }
+    }
+    
+    // Print statistics
+    size_t total_edges = 0;
+    for (const auto& adj_list : graph) {
+        total_edges += adj_list.second.size();
+    }
+    std::cout << "Graph built: " << graph.size() << " nodes, " 
+              << (total_edges / 2) << " edges" << std::endl;
+}
+
+// Optimized STM graph coloring implementation
+void STMColorGraph::colorGraph(
+    std::unordered_map<graphNode, std::vector<graphNode>> &graph,
+    std::unordered_map<graphNode, color> &colors) {
+    
+    // Start timer for performance measurement
+    double start_time = omp_get_wtime();
+    
+    std::cout << "Starting optimized STM coloring..." << std::endl;
+    colors.clear();
+    
+    if (graph.empty()) {
+        std::cout << "Empty graph, nothing to color." << std::endl;
+        return;
+    }
+    
+    // *** OPTIMIZATION: Flat data structures for better cache locality ***
+    const size_t node_count = graph.size();
+    std::vector<graphNode> ordered_nodes(node_count);
+    
+    // Pre-calculate node degrees once and find max node ID
+    std::vector<std::pair<graphNode, size_t>> nodes_with_degrees;
+    nodes_with_degrees.reserve(node_count);
+    
+    graphNode max_node_id = 0;
+    size_t idx = 0;
+    for (const auto& entry : graph) {
+        nodes_with_degrees.emplace_back(entry.first, entry.second.size());
+        max_node_id = std::max(max_node_id, entry.first);
+        
+        // Store node in order of iteration for direct access later
+        ordered_nodes[idx++] = entry.first;
+    }
+    
+    // Sort nodes by degree (descending)
+    std::sort(nodes_with_degrees.begin(), nodes_with_degrees.end(),
+        [](const auto& a, const auto& b) {
+            return a.second > b.second;  // Descending by degree
+        });
+    
+    // Extract sorted nodes
+    for (size_t i = 0; i < node_count; i++) {
+        ordered_nodes[i] = nodes_with_degrees[i].first;
+    }
+    
+    // Free memory early
+    nodes_with_degrees.clear();
+    nodes_with_degrees.shrink_to_fit();
+    
+    // Create mapping from node to index - use direct vector if possible
+    std::vector<size_t> node_to_index_vec;
+    std::unordered_map<graphNode, size_t> node_to_index;
+    bool use_direct_index = (max_node_id < node_count * 3);
+    
+    if (use_direct_index) {
+        node_to_index_vec.resize(max_node_id + 1, SIZE_MAX);
+        for (size_t i = 0; i < node_count; i++) {
+            node_to_index_vec[ordered_nodes[i]] = i;
+        }
+    } else {
+        node_to_index.reserve(node_count);
+        for (size_t i = 0; i < node_count; i++) {
+            node_to_index[ordered_nodes[i]] = i;
+        }
+    }
+    
+    // Create adjacency structure with indices for better cache locality
+    std::vector<std::vector<size_t>> neighbor_indices(node_count);
+    
+    // Pre-allocate neighbor vectors based on known degrees
+    for (size_t i = 0; i < node_count; i++) {
+        auto& neighbors = graph[ordered_nodes[i]];
+        neighbor_indices[i].reserve(neighbors.size());
+    }
+    
+    // Fill adjacency structure with indices instead of node IDs
+    for (size_t i = 0; i < node_count; i++) {
+        auto& neighbors = graph[ordered_nodes[i]];
+        auto& indices = neighbor_indices[i];
+        
+        for (graphNode neighbor : neighbors) {
+            size_t neighbor_idx;
+            
+            if (use_direct_index) {
+                if (neighbor <= max_node_id) {
+                    neighbor_idx = node_to_index_vec[neighbor];
+                    if (neighbor_idx != SIZE_MAX) {
+                        indices.push_back(neighbor_idx);
+                    }
+                }
+            } else {
+                auto it = node_to_index.find(neighbor);
+                if (it != node_to_index.end()) {
+                    indices.push_back(it->second);
+                }
+            }
+        }
+    }
+    
+    // Vectors for colors and colored status - aligned for better cache access
+    alignas(64) std::vector<color> node_colors(node_count, -1);
+    alignas(64) std::vector<bool> colored(node_count, false);
+    
+    // Calculate average degree for adaptive strategies
+    double avg_degree = 0.0;
+    size_t total_edges = 0;
+    for (size_t i = 0; i < node_count; i++) {
+        total_edges += neighbor_indices[i].size();
+    }
+    avg_degree = static_cast<double>(total_edges) / node_count;
+    std::cout << "Graph density: " << avg_degree << " average degree" << std::endl;
+    
+    // Configure thread count based on system and graph
+    int max_threads = omp_get_max_threads();
+    int active_threads;
+    
+    // Adaptive threading strategy
+    if (avg_degree > 100) {
+        // Dense graph - use fewer threads to minimize contention
+        active_threads = std::max(2, std::min(max_threads / 2, 8));
+    } else if (avg_degree > 20) {
+        // Medium density - balanced approach
+        active_threads = std::max(4, std::min(max_threads, 16));
+    } else {
+        // Sparse graph - use more threads
+        active_threads = max_threads;
+    }
+    
+    omp_set_num_threads(active_threads);
+    std::cout << "Using " << active_threads << " threads (adaptive)" << std::endl;
+    
+    // Use atomic for global max color
+    std::atomic<int> global_max_color{-1};
+    
+    // Adaptive sequential coloring threshold
+    size_t seq_threshold;
+    if (avg_degree > 100) {
+        seq_threshold = std::min(static_cast<size_t>(node_count * 0.3), static_cast<size_t>(5000));
+    } else if (avg_degree > 20) {
+        seq_threshold = std::min(static_cast<size_t>(node_count * 0.2), static_cast<size_t>(2000));
+    } else {
+        seq_threshold = std::min(static_cast<size_t>(node_count * 0.1), static_cast<size_t>(1000));
+    }
+    
+    size_t seq_nodes = std::min(seq_threshold, node_count);
+    std::cout << "Coloring " << seq_nodes << " highest-degree nodes sequentially..." << std::endl;
+    
+    // Process high-degree nodes sequentially
+    for (size_t i = 0; i < seq_nodes; i++) {
+        color selected = findBestColor(i, node_colors, colored, neighbor_indices);
+        node_colors[i] = selected;
+        colored[i] = true;
+        
+        // Update global max color
+        if (selected > global_max_color) {
+            global_max_color = selected;
+        }
+    }
+    
+    int current_max_color = global_max_color.load();
+    std::cout << "Sequential coloring used " << (current_max_color + 1) << " colors" << std::endl;
+    
+    // Process remaining nodes in parallel
+    size_t remaining = node_count - seq_nodes;
+    
+    // Create vector to store thread timing data - moved outside if statement
+    std::vector<ThreadTiming> thread_timings(active_threads);
+    
+    if (remaining > 0) {
+        std::cout << "Processing remaining " << remaining << " nodes in parallel..." << std::endl;
+        
+        // Adaptive batch sizing based on graph properties
+        size_t batch_size;
+        if (avg_degree > 50) {
+            batch_size = 128;  // Smaller batches for high contention
+        } else if (avg_degree > 20) {
+            batch_size = 256;  // Medium batches
+        } else {
+            batch_size = 512;  // Larger batches for sparse graphs
+        }
+        
+        // Create processing order
+        std::vector<size_t> processing_order;
+        processing_order.reserve(remaining);
+        
+        for (size_t i = seq_nodes; i < node_count; i++) {
+            processing_order.push_back(i);
+        }
+        
+        // Process nodes in batches
+        const size_t num_batches = (processing_order.size() + batch_size - 1) / batch_size;
+        std::atomic<size_t> total_retries{0};
+        
+        #pragma omp parallel
+        {
+            // Initialize thread-local timing data
+            ThreadTiming local_timing;
+            int thread_id = omp_get_thread_num();
+            local_timing.thread_id = thread_id;
+            local_timing.start_time = omp_get_wtime();
+            local_timing.nodes_processed = 0;
+            local_timing.retries = 0;
+            
+            size_t local_retries = 0;
+            int thread_max_color = current_max_color;
+            
+            #pragma omp for schedule(dynamic, 1)
+            for (size_t batch = 0; batch < num_batches; batch++) {
+                const size_t start_idx = batch * batch_size;
+                const size_t end_idx = std::min(start_idx + batch_size, processing_order.size());
+                
+                // Count nodes for this batch
+                local_timing.nodes_processed += (end_idx - start_idx);
+                
+                for (size_t i = start_idx; i < end_idx; i++) {
+                    size_t node_idx = processing_order[i];
+                    
+                    // Skip if already colored
+                    if (colored[node_idx]) continue;
+                    
+                    // Find best color outside transaction
+                    color selected = findBestColor(node_idx, node_colors, colored, 
+                                               neighbor_indices, false, thread_max_color);
+                    
+                    // Try to apply the color with optimistic approach first
+                    bool success = false;
+                    int retry_count = 0;
+                    const int MAX_RETRIES = 3;
+                    
+                    while (!success && retry_count < MAX_RETRIES) {
+                        bool conflict = false;
+                        
+                        // Check for conflicts before transaction to reduce abort rate
+                        for (size_t nb_idx : neighbor_indices[node_idx]) {
+                            if (colored[nb_idx] && node_colors[nb_idx] == selected) {
+                                conflict = true;
+                                break;
+                            }
+                        }
+                        
+                        if (!conflict) {
+                            // Try optimistic transaction
+                            __transaction_atomic {
+                                if (!colored[node_idx]) {
+                                    node_colors[node_idx] = selected;
+                                    colored[node_idx] = true;
+                                    success = true;
+                                }
+                            }
+                        }
+                        
+                        // If failed, retry with different color
+                        if (!success) {
+                            retry_count++;
+                            local_retries++;
+                            local_timing.retries++;
+                            
+                            // Find a new color for retry
+                            if (retry_count < MAX_RETRIES) {
+                                selected = findBestColor(node_idx, node_colors, colored, 
+                                                     neighbor_indices, true, thread_max_color);
+                            } else {
+                                // After max retries, use a guaranteed new color
+                                selected = global_max_color.fetch_add(1) + 1;
+                            }
+                        }
+                    }
+                    
+                    // Update thread local max color
+                    if (success && selected > thread_max_color) {
+                        thread_max_color = selected;
+                        
+                        // Periodically update global max color to reduce atomic contention
+                        if (selected > global_max_color.load()) {
+                            // Try to update global max color only if we have a larger value
+                            int expected = global_max_color.load();
+                            while (selected > expected) {
+                                if (global_max_color.compare_exchange_weak(expected, selected, 
+                                    std::memory_order_relaxed)) {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Accumulate retry statistics
+            if (local_retries > 0) {
+                total_retries.fetch_add(local_retries, std::memory_order_relaxed);
+            }
+            
+            // Record end time and save thread stats
+            local_timing.end_time = omp_get_wtime();
+            thread_timings[thread_id] = local_timing;
+        }
+        
+        if (total_retries.load() > 0) {
+            std::cout << "Transaction retries: " << total_retries.load() 
+                      << " (avg " << (double)total_retries.load() / remaining 
+                      << " per node)" << std::endl;
+        }
+        
+        // Print thread timing information
+        printThreadTimings(thread_timings);
+    }
+    
+    // Verify coloring and resolve any conflicts
+    int conflict_count = 0;
+    std::mutex conflict_mutex;
+    
+    #pragma omp parallel
+    {
+        int local_conflicts = 0;
+        
+        #pragma omp for schedule(dynamic, 128)
+        for (size_t i = 0; i < node_count; i++) {
+            for (size_t nb_idx : neighbor_indices[i]) {
+                if (i < nb_idx && node_colors[i] == node_colors[nb_idx]) {
+                    local_conflicts++;
+                    
+                    // Resolve conflict by assigning a new color
+                    int new_color = global_max_color.fetch_add(1) + 1;
+                    
+                    __transaction_atomic {
+                        node_colors[i] = new_color;
+                    }
+                    
+                    break; // Only fix one conflict per node
+                }
+            }
+        }
+        
+        // Update global conflict count
+        if (local_conflicts > 0) {
+            std::lock_guard<std::mutex> lock(conflict_mutex);
+            conflict_count += local_conflicts;
+        }
+    }
+    
+    if (conflict_count > 0) {
+        std::cout << "Fixed " << conflict_count << " color conflicts" << std::endl;
+    } else {
+        std::cout << "Coloring validation successful" << std::endl;
+    }
+    
+    // Final global max color
+    int final_max_color = global_max_color.load();
+    
+    // Optimize map copying - the primary hotspot for map operations
+    // Use direct copy into pre-allocated map
+    colors.reserve(node_count);
+    if (node_count > 1000) {
+        // Process in chunks to improve cache locality
+        const size_t COPY_CHUNK = 256;
+        
+        #pragma omp parallel
+        {
+            // Thread-local buffer to reduce contention
+            std::vector<std::pair<graphNode, color>> local_buffer;
+            local_buffer.reserve(COPY_CHUNK);
+            
+            #pragma omp for schedule(dynamic, 1)
+            for (size_t chunk_start = 0; chunk_start < node_count; chunk_start += COPY_CHUNK) {
+                size_t chunk_end = std::min(chunk_start + COPY_CHUNK, node_count);
+                local_buffer.clear();
+                
+                // Fill local buffer
+                for (size_t i = chunk_start; i < chunk_end; i++) {
+                    local_buffer.emplace_back(ordered_nodes[i], node_colors[i]);
+                }
+                
+                // Batch insert to minimize lock contention
+                #pragma omp critical
+                {
+                    for (const auto& item : local_buffer) {
+                        colors[item.first] = item.second;
+                    }
+                }
+            }
+        }
+    } else {
+        // Direct copy for smaller graphs
+        for (size_t i = 0; i < node_count; i++) {
+            colors[ordered_nodes[i]] = node_colors[i];
+        }
+    }
+    
+    // End timer and report performance
+    double end_time = omp_get_wtime();
+    double time_spent = end_time - start_time;
+    
+    std::cout << "Time spent: " << time_spent << " seconds" << std::endl;
+    std::cout << "Colored with " << (final_max_color + 1) << " colors" << std::endl;
+}
+
+// Factory function optimized for minimal overhead
+std::unique_ptr<ColorGraph> createSTMColorGraph(const char* stm_type, int iterations, bool try_bipartite) {
+    static thread_local bool registered = false;
+    if (!registered) {
+        // No need for atexit registration as we use thread-local object pooling
+        registered = true;
+    }
+    
+    // Create appropriate graph type based on input parameter
+    if (strcmp(stm_type, "tl2") == 0) {
+        return std::make_unique<TL2ColorGraph>(iterations, try_bipartite);
+    } else {
+        return std::make_unique<LibITMColorGraph>(iterations, try_bipartite);
+    }
+}

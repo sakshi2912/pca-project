@@ -1,0 +1,188 @@
+#include "graph.h"
+#include <vector>
+#include <algorithm>
+#include <numeric>
+#include <cstring> // For memset
+
+class OptimizedColorGraph : public ColorGraph {
+private:
+    // CSR (Compressed Sparse Row) representation for better cache locality
+    struct CSRGraph {
+        std::vector<int> offsets;    // Node start positions in edges array
+        std::vector<int> edges;      // Flattened adjacency lists
+        
+        void build(const std::unordered_map<graphNode, std::vector<graphNode>>& graph) {
+            int num_nodes = graph.size();
+            offsets.resize(num_nodes + 1);
+            
+            // Count total edges and calculate offsets
+            int edge_count = 0;
+            for (int i = 0; i < num_nodes; i++) {
+                offsets[i] = edge_count;
+                auto it = graph.find(i);
+                if (it != graph.end()) {
+                    edge_count += it->second.size();
+                }
+            }
+            offsets[num_nodes] = edge_count;
+            
+            // Fill edges array
+            edges.resize(edge_count);
+            for (int i = 0; i < num_nodes; i++) {
+                auto it = graph.find(i);
+                if (it != graph.end()) {
+                    std::copy(it->second.begin(), it->second.end(), 
+                              edges.begin() + offsets[i]);
+                }
+            }
+        }
+        
+        // Get neighbors of vertex v
+        std::pair<const int*, const int*> neighbors(int v) const {
+            return {&edges[offsets[v]], &edges[offsets[v+1]]};
+        }
+        
+        // Get degree of vertex v
+        int degree(int v) const {
+            return offsets[v+1] - offsets[v];
+        }
+    };
+
+public:
+    void buildGraph(std::vector<graphNode> &nodes, std::vector<std::pair<int, int>> &pairs,
+                   std::unordered_map<graphNode, std::vector<graphNode>> &graph) override {
+        // Initialize the graph
+        for (auto &node : nodes) graph[node] = {};
+        
+        // Reserve space to avoid reallocations
+        for (auto &node : nodes) {
+            graph[node].reserve(16);  // Typical average degree in many real-world graphs
+        }
+        
+        // Build edges
+        for (auto &edge : pairs) {
+            graph[edge.first].push_back(edge.second);
+            graph[edge.second].push_back(edge.first);
+        }
+    }
+
+    void colorGraph(std::unordered_map<graphNode, std::vector<graphNode>> &graph,
+                   std::unordered_map<graphNode, color> &colors) override {
+        const int numNodes = static_cast<int>(graph.size());
+        if (numNodes == 0) return;
+        
+        // Convert to CSR format for better cache locality
+        CSRGraph csr_graph;
+        csr_graph.build(graph);
+        
+        // Use a flat array for colors instead of std::atomic
+        std::vector<color> node_colors(numNodes, -1);
+        
+        // Compute vertex ordering by degree
+        std::vector<int> vertices(numNodes);
+        std::iota(vertices.begin(), vertices.end(), 0);  // Fill with 0,1,2,...
+        
+        std::sort(vertices.begin(), vertices.end(), 
+            [&csr_graph](int a, int b) {
+                return csr_graph.degree(a) > csr_graph.degree(b);
+            });
+        
+        // Thread-local storage for forbidden colors to avoid reallocation
+        const int chunk_size = 64;  // Good balance for most hardware
+        int max_color = 0;
+        
+        // First coloring pass - process in chunks for better parallelism
+        #pragma omp parallel
+        {
+            // Thread-local bitmap for forbidden colors - over-allocate to reduce resizing
+            std::vector<bool> forbidden(1024, false);  // Pre-allocate for typical graph sizes
+            std::vector<int> local_vertices;
+            local_vertices.reserve(chunk_size);
+            
+            #pragma omp for schedule(dynamic, chunk_size) reduction(max:max_color)
+            for (int i = 0; i < numNodes; i++) {
+                const int v = vertices[i];
+                
+                // Clear previous forbidden marks
+                std::fill(forbidden.begin(), forbidden.end(), false);
+                
+                // Mark colors of neighbors as forbidden
+                auto [begin, end] = csr_graph.neighbors(v);
+                for (auto it = begin; it != end; ++it) {
+                    const int nbor = *it;
+                    const color nbor_color = node_colors[nbor];
+                    if (nbor_color >= 0) {
+                        // Resize forbidden if needed
+                        if (nbor_color >= static_cast<int>(forbidden.size())) {
+                            forbidden.resize(nbor_color + 1, false);
+                        }
+                        forbidden[nbor_color] = true;
+                    }
+                }
+                
+                // Find smallest available color
+                color selected = 0;
+                while (selected < static_cast<int>(forbidden.size()) && forbidden[selected]) selected++;
+                
+                node_colors[v] = selected;
+                max_color = std::max(max_color, selected);
+                
+                // Collect vertices for this thread
+                local_vertices.push_back(v);
+            }
+            
+            // Verify and fix colors for this thread's vertices
+            #pragma omp barrier
+            
+            // Second verification pass - check for conflicts and fix
+            for (int v : local_vertices) {
+                std::fill(forbidden.begin(), forbidden.end(), false);
+                
+                auto [begin, end] = csr_graph.neighbors(v);
+                bool has_conflict = false;
+                
+                // Check for conflicts
+                for (auto it = begin; it != end; ++it) {
+                    const int nbor = *it;
+                    const color nbor_color = node_colors[nbor];
+                    
+                    if (nbor_color >= 0) {
+                        if (nbor_color >= static_cast<int>(forbidden.size())) {
+                            forbidden.resize(nbor_color + 1, false);
+                        }
+                        
+                        if (nbor_color == node_colors[v]) {
+                            // Resolve conflict - lower ID keeps its color
+                            if (v > nbor) {
+                                has_conflict = true;
+                            }
+                        }
+                        
+                        forbidden[nbor_color] = true;
+                    }
+                }
+                
+                // Fix conflict if needed
+                if (has_conflict) {
+                    color new_color = 0;
+                    while (new_color < static_cast<int>(forbidden.size()) && forbidden[new_color]) new_color++;
+                    
+                    #pragma omp critical
+                    {
+                        node_colors[v] = new_color;
+                        max_color = std::max(max_color, new_color);
+                    }
+                }
+            }
+        }
+        
+        // Transfer colors to output map
+        for (int i = 0; i < numNodes; i++) {
+            colors[i] = node_colors[i];
+        }
+    }
+};
+
+std::unique_ptr<ColorGraph> createTransactionalColorGraph() {
+    return std::make_unique<OptimizedColorGraph>();
+}
