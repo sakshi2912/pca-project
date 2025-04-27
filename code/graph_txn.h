@@ -3,11 +3,12 @@
 #define GRAPH_TXN_H
 
 #include <vector>
-#include <algorithm>
 #include <string>
-#include <unordered_map>
 #include <stdexcept>
+#include <algorithm>
 #include <iostream>
+#include <memory>
+#include <utility>
 
 class Graph {
 private:
@@ -16,26 +17,42 @@ private:
     std::vector<std::vector<int>> adjacency_lists;
 
 public:
-    // Constructor for an empty graph with given number of vertices
-    Graph(int vertices) : num_vertices(vertices), num_edges(0) {
+    // Constructor with safe initialization
+    explicit Graph(int vertices) : num_vertices(vertices), num_edges(0) {
+        if (vertices <= 0) {
+            throw std::invalid_argument("Number of vertices must be positive");
+        }
+        
+        // Pre-allocate with safe size
         adjacency_lists.resize(vertices);
     }
     
-    // Add an edge between vertices u and v
+    // Reserve space for edges with bounds checking
+    void reserveEdges(int avg_degree) {
+        if (avg_degree <= 0) return;
+        
+        // Cap the reservation to avoid excessive memory usage
+        int safe_degree = std::min(avg_degree, 1000);
+        
+        for (auto& adj : adjacency_lists) {
+            adj.reserve(safe_degree);
+        }
+    }
+    
+    // Safe edge addition with bounds check
     void addEdge(int u, int v) {
         if (u < 0 || u >= num_vertices || v < 0 || v >= num_vertices) {
             throw std::out_of_range("Vertex index out of range");
         }
         
-        // Check if the edge already exists
-        if (std::find(adjacency_lists[u].begin(), adjacency_lists[u].end(), v) == adjacency_lists[u].end()) {
-            adjacency_lists[u].push_back(v);
+        adjacency_lists[u].push_back(v);
+        if (u != v) { // Handle self-loops
             adjacency_lists[v].push_back(u);
-            num_edges++;
         }
+        num_edges++;
     }
     
-    // Get the neighbors of a vertex
+    // Get neighbors with bounds checking
     const std::vector<int>& getNeighbors(int vertex) const {
         if (vertex < 0 || vertex >= num_vertices) {
             throw std::out_of_range("Vertex index out of range");
@@ -43,14 +60,16 @@ public:
         return adjacency_lists[vertex];
     }
     
-    // Get the number of vertices
-    int numVertices() const {
-        return num_vertices;
-    }
+    // Basic getters
+    int numVertices() const { return num_vertices; }
+    int numEdges() const { return num_edges; }
     
-    // Get the number of edges
-    int numEdges() const {
-        return num_edges;
+    // Optimize the graph safely
+    void optimize() {
+        #pragma omp parallel for schedule(dynamic, 64)
+        for (int i = 0; i < num_vertices; i++) {
+            std::sort(adjacency_lists[i].begin(), adjacency_lists[i].end());
+        }
     }
 };
 

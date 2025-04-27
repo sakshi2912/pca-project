@@ -1,154 +1,169 @@
 // graph_txn.cpp
 #include "graph_txn.h"
 #include <fstream>
-#include <sstream>
-#include <iostream>
-#include <string.h>
+#include <string>
+#include <cstring>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/mman.h>
-#include <iostream>
+#include <omp.h>
+#include <limits>
+#include <sstream>
+#include <stdexcept>
 
-// Constants
-constexpr size_t READ_BUFFER_SIZE = 1024 * 1024; // 1MB buffer for file reading
+// Safe node mapper with bounds checking
+class NodeMapper {
+private:
+    std::vector<int> indices;
+    int next_index;
+    
+public:
+    explicit NodeMapper(int estimated_size) : next_index(0) {
+        // Limit maximum size to avoid excessive memory usage
+        int safe_size = std::min(estimated_size, 100000000);
+        indices.resize(safe_size, -1);
+    }
+    
+    // Map node ID to index with bounds checking
+    int getOrCreate(int node_id) {
+        // Ensure node_id is non-negative
+        if (node_id < 0) {
+            throw std::invalid_argument("Node ID cannot be negative");
+        }
+        
+        // Resize if needed, with safety limits
+        if (node_id >= static_cast<int>(indices.size())) {
+            size_t new_size = std::min(
+                std::max(static_cast<size_t>(node_id + 1), indices.size() * 2),
+                static_cast<size_t>(std::numeric_limits<int>::max())
+            );
+            indices.resize(new_size, -1);
+        }
+        
+        // Create mapping if needed
+        if (indices[node_id] == -1) {
+            indices[node_id] = next_index++;
+        }
+        
+        return indices[node_id];
+    }
+    
+    int count() const { return next_index; }
+};
+
+// Safe integer parsing with error checking
+bool safeParseInt(const char* str, int& result) {
+    if (!str || *str == '\0') return false;
+    
+    char* end;
+    long val = strtol(str, &end, 10);
+    
+    // Check for conversion errors
+    if (end == str || *end != '\0') return false;
+    
+    // Check for overflow/underflow
+    if (val > std::numeric_limits<int>::max() || 
+        val < std::numeric_limits<int>::min()) {
+        return false;
+    }
+    
+    result = static_cast<int>(val);
+    return true;
+}
+
+// Process a line safely
+bool processLine(const std::string& line, int& n1, int& n2) {
+    // Skip comments and empty lines
+    if (line.empty() || line[0] == '#' || line[0] == '%') {
+        return false;
+    }
+    
+    // Use string stream for safer parsing
+    std::istringstream iss(line);
+    if (!(iss >> n1 >> n2)) {
+        return false;
+    }
+    
+    return true;
+}
 
 Graph loadGraphFromFile(const std::string& filename) {
-    std::vector<int> nodes;
-    std::vector<std::pair<int, int>> edges;
-    std::unordered_map<int, int> node_to_index;
-    
-    std::cout << "Reading graph from file: " << filename << std::endl;
-    
-    // Use memory-mapped IO for large files
-    struct stat sb;
-    if (stat(filename.c_str(), &sb) == -1) {
-        std::cerr << "Error: Cannot stat file " << filename << std::endl;
-        exit(1);
-    }
-    
-    // Map original node IDs to consecutive indices starting from 0
-    int next_index = 0;
-    int max_node_id = -1;
-    
-    if (sb.st_size > 100 * 1024 * 1024) { // Use mmap for files > 100MB
-        std::cout << "Using memory-mapped I/O for large file" << std::endl;
-        int fd = open(filename.c_str(), O_RDONLY);
-        if (fd == -1) {
-            std::cerr << "Error: Cannot open file " << filename << std::endl;
-            exit(1);
+    try {
+        // Get file information
+        struct stat sb;
+        if (stat(filename.c_str(), &sb) == -1) {
+            throw std::runtime_error("Cannot stat file: " + filename);
         }
         
-        void* mapped = mmap(NULL, sb.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
-        if (mapped == MAP_FAILED) {
-            close(fd);
-            std::cerr << "Error: Cannot mmap file " << filename << std::endl;
-            exit(1);
-        }
+        // Prepare for edge collection
+        std::vector<std::pair<int, int>> edges;
+        size_t est_lines = sb.st_size / 20; // Rough estimate
+        edges.reserve(std::min(est_lines, static_cast<size_t>(10000000)));
         
-        const char* fileContent = static_cast<const char*>(mapped);
-        const char* end = fileContent + sb.st_size;
-        const char* lineStart = fileContent;
+        int max_node_id = -1;
         
-        // Pre-allocate based on file size estimate
-        size_t estLines = sb.st_size / 20; // Rough estimate
-        nodes.reserve(estLines / 3);
-        edges.reserve(estLines * 2 / 3);
-        
-        while (lineStart < end) {
-            const char* lineEnd = lineStart;
-            while (lineEnd < end && *lineEnd != '\n') lineEnd++;
-            
-            std::string line(lineStart, lineEnd);
-            if (!line.empty() && line[0] != '#' && line[0] != '%') {
-                std::istringstream iss(line);
-                int n1, n2;
-                if (iss >> n1 >> n2) {
-                    // Register nodes if they haven't been seen before
-                    if (node_to_index.find(n1) == node_to_index.end()) {
-                        node_to_index[n1] = next_index++;
-                        nodes.push_back(n1);
-                        max_node_id = std::max(max_node_id, n1);
-                    }
-                    
-                    if (node_to_index.find(n2) == node_to_index.end()) {
-                        node_to_index[n2] = next_index++;
-                        nodes.push_back(n2);
-                        max_node_id = std::max(max_node_id, n2);
-                    }
-                    
-                    edges.emplace_back(n1, n2);
-                }
-            }
-            
-            lineStart = lineEnd + 1;
-            if (lineStart >= end) break;
-        }
-        
-        munmap(mapped, sb.st_size);
-        close(fd);
-    } else {
-        // For smaller files, use buffered IO
+        // Standard file IO (safer than memory mapping)
         std::ifstream file(filename);
         if (!file.is_open()) {
-            std::cerr << "Error: Cannot open file " << filename << std::endl;
-            exit(1);
+            throw std::runtime_error("Cannot open file: " + filename);
         }
         
-        // Pre-allocate vectors based on file size
-        size_t estLines = sb.st_size / 20;
-        nodes.reserve(estLines / 3);
-        edges.reserve(estLines * 2 / 3);
-        
+        // Process file line by line
         std::string line;
-        char buffer[READ_BUFFER_SIZE];
-        
-        while (file.getline(buffer, READ_BUFFER_SIZE)) {
-            line = buffer;
-            if (!line.empty() && line[0] != '#' && line[0] != '%') {
-                std::istringstream iss(line);
-                int n1, n2;
-                if (iss >> n1 >> n2) {
-                    // Register nodes if they haven't been seen before
-                    if (node_to_index.find(n1) == node_to_index.end()) {
-                        node_to_index[n1] = next_index++;
-                        nodes.push_back(n1);
-                        max_node_id = std::max(max_node_id, n1);
-                    }
-                    
-                    if (node_to_index.find(n2) == node_to_index.end()) {
-                        node_to_index[n2] = next_index++;
-                        nodes.push_back(n2);
-                        max_node_id = std::max(max_node_id, n2);
-                    }
-                    
-                    edges.emplace_back(n1, n2);
+        while (std::getline(file, line)) {
+            int n1, n2;
+            if (processLine(line, n1, n2)) {
+                // Validate node IDs
+                if (n1 < 0 || n2 < 0) {
+                    std::cerr << "Warning: Skipping negative node ID in line: " << line << std::endl;
+                    continue;
+                }
+                
+                edges.emplace_back(n1, n2);
+                max_node_id = std::max(max_node_id, std::max(n1, n2));
+                
+                // Safety check for very large graphs
+                if (edges.size() >= 100000000) {
+                    std::cerr << "Warning: Graph is very large, truncating at 100M edges" << std::endl;
+                    break;
                 }
             }
         }
         
-        file.close();
-    }
-    
-    // Create the graph with the correct number of vertices
-    int num_vertices = node_to_index.size();
-    Graph graph(num_vertices);
-    
-    std::cout << "Found " << num_vertices << " vertices and " << edges.size() << " edges" << std::endl;
-    
-    // Add edges to the graph, translating to indices
-    for (const auto& edge : edges) {
-        int u = node_to_index[edge.first];
-        int v = node_to_index[edge.second];
+        // Create node mapper with safe size estimate
+        NodeMapper mapper(max_node_id + 1);
         
-        try {
-            graph.addEdge(u, v);
-        } catch (const std::exception& e) {
-            std::cerr << "Warning: Failed to add edge (" << u << ", " << v << "): " 
-                      << e.what() << std::endl;
+        // Map node IDs to consecutive indices
+        for (auto& edge : edges) {
+            edge.first = mapper.getOrCreate(edge.first);
+            edge.second = mapper.getOrCreate(edge.second);
         }
+        
+        // Create graph with proper vertex count
+        int vertex_count = mapper.count();
+        Graph graph(vertex_count);
+        
+        // Calculate safe average degree
+        double avg_degree = 2.0 * edges.size() / vertex_count;
+        int reserve_size = std::min(static_cast<int>(avg_degree * 1.1), 1000);
+        graph.reserveEdges(reserve_size);
+        
+        std::cout << "Found " << vertex_count << " vertices and " << edges.size() << " edges" << std::endl;
+        
+        // Add all edges to graph
+        for (const auto& edge : edges) {
+            graph.addEdge(edge.first, edge.second);
+        }
+        
+        // Optimize graph
+        graph.optimize();
+        
+        return graph;
     }
-    
-    std::cout << "Graph loaded successfully" << std::endl;
-    return graph;
+    catch (const std::exception& e) {
+        std::cerr << "Error loading graph: " << e.what() << std::endl;
+        // Return an empty graph as fallback
+        return Graph(1);
+    }
 }
