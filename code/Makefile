@@ -28,7 +28,7 @@ else ifeq (STM, $(CONFIGURATION))
     LDFLAGS += -litm
 else ifeq (release,$(CONFIGURATION))
     # Default release build WITH STM support
-    CFLAGS += -O2 -fopenmp -fgnu-tm -DUSE_LIBITM_STM=1 -litm -mavx2 -pg
+    CFLAGS += -O2 -fopenmp -fgnu-tm -DUSE_LIBITM_STM=1 -litm -mavx2 -pg  -mrtm -mavx -march=native
     LDFLAGS += -litm
 else ifeq (release-no-stm,$(CONFIGURATION))
     # Special case: release build WITHOUT STM
