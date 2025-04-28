@@ -117,7 +117,6 @@ public:
     TLSColorPool() : initialized(false) {}
     
     ~TLSColorPool() {
-        // Nothing needed here - pools clean themselves up
     }
     
     void initialize() {
@@ -511,15 +510,13 @@ STMColorGraph::STMColorGraph(STMType type, int iterations, bool try_bipartite, i
     // Initialize TLS pool
     tls_color_pool.initialize();
     
-    const char* type_names[] = {"LibITM", "TL2", "Hybrid", "TMGraph"};
+    const char* type_names[] = {"LibITM", "TL2"};
     std::cout << "STM Graph Coloring (" << type_names[static_cast<int>(type)] << ")\n";
     std::cout << "Max iterations: " << max_iterations << "\n";
     std::cout << "Bipartite detection: " << (detect_bipartite ? "enabled" : "disabled") << "\n";
 }
 
-// Optimized destructor to address the main hotspot (32.1%)
 STMColorGraph::~STMColorGraph() {
-    // Nothing to do - all member variables handle their own cleanup efficiently
 }
 
 // Optimized graph building with reduced map operations
@@ -625,7 +622,7 @@ void STMColorGraph::colorGraph(
         return;
     }
     
-    // *** OPTIMIZATION: Flat data structures for better cache locality ***
+    // Flat data structures for better cache locality
     const size_t node_count = graph.size();
     std::vector<graphNode> ordered_nodes(node_count);
     
@@ -1010,15 +1007,12 @@ void STMColorGraph::colorGraph(
     std::cout << "Colored with " << (final_max_color + 1) << " colors" << std::endl;
 }
 
-// Factory function optimized for minimal overhead
 std::unique_ptr<ColorGraph> createSTMColorGraph(const char* stm_type, int iterations, bool try_bipartite, int num_threads) {
     static thread_local bool registered = false;
     if (!registered) {
-        // No need for atexit registration as we use thread-local object pooling
         registered = true;
     }
     
-    // Create appropriate graph type based on input parameter
     if (strcmp(stm_type, "tl2") == 0) {
         return std::make_unique<TL2ColorGraph>(iterations, try_bipartite, num_threads);
     } else {

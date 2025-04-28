@@ -52,7 +52,6 @@ public:
     int count() const { return next_index; }
 };
 
-// Safe integer parsing with error checking
 bool safeParseInt(const char* str, int& result) {
     if (!str || *str == '\0') return false;
     
@@ -72,7 +71,6 @@ bool safeParseInt(const char* str, int& result) {
     return true;
 }
 
-// Process a line safely
 bool processLine(const std::string& line, int& n1, int& n2) {
     // Skip comments and empty lines
     if (line.empty() || line[0] == '#' || line[0] == '%') {

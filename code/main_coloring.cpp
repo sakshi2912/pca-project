@@ -21,7 +21,6 @@ constexpr int PREFETCH_DISTANCE = 8;  // Prefetch distance for cache optimizatio
 constexpr int FALLBACK_THRESHOLD = 3; // Consecutive abort threshold to trigger fallback
 constexpr int VECTOR_BATCH_SIZE = 4;  // Size for vector coloring batch operations
 
-// Custom memory structure to improve cache locality
 struct VertexInfo {
     int color;
     int degree;
@@ -46,7 +45,7 @@ class OptimizedTSXGraphColoring {
         std::atomic<int> transaction_success_count{0};
         std::atomic<int> transaction_abort_count{0};
         
-        // Fast vertex preparation with binning instead of sorting
+        // Fast vertex preparation with binning
         void prepareVertices() {
             vertex_degrees.resize(num_vertices);
             ordered_vertices.resize(num_vertices);
@@ -100,7 +99,7 @@ class OptimizedTSXGraphColoring {
             bool* forbidden = stack_forbidden;
             
             // Ensure we have enough space
-            const int buffer_size = current_max_color + 16; // Small buffer
+            const int buffer_size = current_max_color + 16;
             if (buffer_size > STACK_BUFFER_SIZE) {
                 heap_forbidden = std::make_unique<bool[]>(buffer_size);
                 std::fill_n(heap_forbidden.get(), buffer_size, false);
@@ -227,7 +226,7 @@ class OptimizedTSXGraphColoring {
                 // Pre-compute color outside transaction
                 int precomputed_color = precomputeColor(vertex);
                 
-                // Fast path: if color doesn't increase max, just assign it
+                // if color doesn't increase max, just assign it
                 int current_max = max_color.load(std::memory_order_relaxed);
                 if (precomputed_color < current_max) {
                     colors[vertex] = precomputed_color;
@@ -289,7 +288,7 @@ class OptimizedTSXGraphColoring {
                       << transaction_success_count.load() << " successful, "
                       << transaction_abort_count.load() << " aborted" << std::endl;
             
-            // Third phase: conflict detection and resolution (simplified)
+            // Third phase: conflict detection and resolution 
             const int MAX_RESOLUTION_ITERATIONS = 2;
             bool has_conflicts = true;
             int resolution_iterations = 0;
