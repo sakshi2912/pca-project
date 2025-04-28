@@ -4,10 +4,10 @@
 FILES=("sparse-50000.txt" "random-5000.txt" "corner-50000.txt" "components-50000.txt")
 
 # Define which thread counts to test and display
-THREADS=(16 32)
+THREADS=(1 2 4 8 16 32 64 32)
 
 # Define approaches - add or remove as needed
-APPROACHES=("seq" "half" "stm" "txn")  
+APPROACHES=("seq" "stm" "txn")  
 
 # Store results in memory only, no files
 declare -A TIME_RESULTS
@@ -30,7 +30,7 @@ run_test() {
     
     # Run and display output directly
     echo "------------ Start of $approach ($threads threads) output ------------"
-    output=$(./color-release -$approach -f $file 2>&1)
+    output=$(./color-transactional -$approach -f $file 2>&1)
     echo "$output"
     echo "------------ End of $approach ($threads threads) output ------------"
     

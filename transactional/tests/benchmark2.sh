@@ -4,10 +4,10 @@
 FILES=("sparse-50000.txt" "random-5000.txt" "corner-50000.txt" "components-50000.txt")
 
 # Define which thread counts to test and display
-THREADS=(16 32)
+THREADS=(1 2 4 8 16 32 64 32)
 
 # Define approaches - add or remove as needed
-APPROACHES=("seq" "stm" "txn" "htm")  # Added htm
+APPROACHES=("seq" "stm" "txn")  
 
 # Store results in memory only, no files
 declare -A TIME_RESULTS
@@ -28,48 +28,26 @@ run_test() {
         export OMP_NUM_THREADS=$threads
     fi
     
-    # Run the appropriate command based on approach
+    # Run and display output directly
     echo "------------ Start of $approach ($threads threads) output ------------"
-    if [ "$approach" == "htm" ]; then
-        # For HTM approach, run the coloring_tsx executable
-        output=$(./coloring_tsx $file 2>&1)
-        
-        # Extract time using pattern matching for HTM approach
-        time_s=$(echo "$output" | grep "HTM coloring completed in" | awk '{print $5}')
-        if [ -z "$time_s" ]; then time_s="0"; fi
-        
-        # Extract colors using pattern matching for HTM approach
-        colors=$(echo "$output" | grep "Used " | awk '{print $2}')
-        if [ -z "$colors" ]; then colors="0"; fi
-        
-        # Check correctness for HTM approach
-        if echo "$output" | grep -q "Coloring is valid"; then
-            correctness="PASS"
-        else
-            correctness="FAIL"
-        fi
-    else
-        # For other approaches, use the color-release binary
-        output=$(./color-release -$approach -f $file 2>&1)
-        
-        # Extract time using pattern matching - take the last one
-        time_s=$(echo "$output" | grep "Time spent:" | tail -1 | awk '{print $3}')
-        if [ -z "$time_s" ]; then time_s="0"; fi
-        
-        # Extract colors using pattern matching - take the last one
-        colors=$(echo "$output" | grep "Colored with" | tail -1 | awk '{print $3}')
-        if [ -z "$colors" ]; then colors="0"; fi
-        
-        # Check correctness
-        if echo "$output" | grep -q "Failed"; then
-            correctness="FAIL"
-        else
-            correctness="PASS"
-        fi
-    fi
-    
+    output=$(./color-transactional -$approach -f $file 2>&1)
     echo "$output"
     echo "------------ End of $approach ($threads threads) output ------------"
+    
+    # Extract time using pattern matching - take the last one
+    time_s=$(echo "$output" | grep "Time spent:" | tail -1 | awk '{print $3}')
+    if [ -z "$time_s" ]; then time_s="0"; fi
+    
+    # Extract colors using pattern matching - take the last one
+    colors=$(echo "$output" | grep "Colored with" | tail -1 | awk '{print $3}')
+    if [ -z "$colors" ]; then colors="0"; fi
+    
+    # Check correctness
+    if echo "$output" | grep -q "Failed"; then
+        correctness="FAIL"
+    else
+        correctness="PASS"
+    fi
     
     # Calculate speedup if this is not sequential
     speedup=""
@@ -152,7 +130,7 @@ for file in "${FILES[@]}"; do
     echo ""
     
     # Print a separator
-    printf "%s\n" "$(printf '=' {1..82})"  # Increased width for additional approach
+    printf "%s\n" "$(printf '=' {1..72})"
     
     # Print the sequential row first (thread count 1)
     printf "%-8s | " "1"
@@ -200,7 +178,7 @@ for file in "${FILES[@]}"; do
     echo ""
     
     # Print a separator
-    printf "%s\n" "$(printf '=' {1..68})"  # Increased width for additional approach
+    printf "%s\n" "$(printf '=' {1..60})"
     
     # Print speedup data for each thread count
     for threads in "${THREADS[@]}"; do
