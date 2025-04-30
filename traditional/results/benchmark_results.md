@@ -1,0 +1,9 @@
+# Graph Coloring Benchmark Results
+
+| Testcase | Parameters | Sequential Time (sec) | MPIv3 Time (sec) | MPIv3 Colors | Speedup |
+|----------|------------|----------------------|-------------------|--------------|---------|
+| random-50000 | s=4 | np=16 | 0.97396 |  | ,N/Ax |
+| complete-5000 | s=1000 | np=4 | 0.97819 | 1.02031 | 5000,0.96x |
+| components-50000 | s=10 | np=8 | 0.50790 | 0.59197 | 88,0.86x |
+| random-5000 | s=4 | np=8 | 0.12566 | 0.14544 | 175,0.86x |
+| sparse-50000 | s=100 | np=4 | 0.08066 | 0.09575 | 18,0.84x |
