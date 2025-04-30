@@ -1,0 +1,133 @@
+./tests/benchmark_htm.sh 
+---------------------------------------------------------------------------------------------------------------------------------------------
+                                                     BENCHMARKING FILE: random-5000.txt
+---------------------------------------------------------------------------------------------------------------------------------------------
+
+SEQUENTIAL VERSION:
+Time (s)   | Colors     | Version   
+0.11491    | 176        | Sequential
+
+HTM VERSIONS:
+Threads  | Time (s)   | Colors     | Success Rate | Aborts   | Conflicts | Speedup 
+1        | 0.088135   | 171        | 0%           | 0        | 0        | 1.30x   
+2        | 0.0713728  | 171        | 0%           | 0        | 0        | 1.61x   
+4        | 0.0649586  | 171        | 0%           | 0        | 0        | 1.77x   
+8        | 0.0662876  | 171        | 0%           | 0        | 0        | 1.73x   
+16       | 0.0627595  | 171        | 0%           | 0        | 0        | 1.83x   
+32       | 0.0614803  | 171        | 0%           | 0        | 0        | 1.87x   
+64       | 0.0629104  | 171        | 0%           | 0        | 0        | 1.83x   
+128      | 0.061571   | 171        | 0%           | 0        | 0        | 1.87x   
+256      | 0.0622753  | 171        | 0%           | 0        | 0        | 1.85x   
+
+TSX STATISTICS (Last Run with 256 threads):
+Transaction statistics: 0 successful, 0 aborted
+Optimized TSX coloring completed in 0.0622753 seconds
+TSX Transaction Statistics:
+  Success rate: 0%
+Color distribution: Color 0: 35 vertices, Color 1: 32 vertices, Color 2: 34 vertices, Color 3: 35 vertices, Color 4: 33 vertices, ...
+Conflict resolution stats: 0 total conflicts, 0 max conflicts per vertex
+TSX Transaction Statistics:
+  Success rate: 0%
+Color distribution: Color 0: 35 vertices, Color 1: 32 vertices, Color 2: 34 vertices, Color 3: 35 vertices, Color 4: 33 vertices, ...
+Conflict resolution stats: 0 total conflicts, 0 max conflicts per vertex
+Conflict resolution stats: 0 total conflicts, 0 max conflicts per vertex
+Coloring is valid
+---------------------------------------------------------------------------------------------------------------------------------------------
+                                                   BENCHMARKING FILE: components-50000.txt
+---------------------------------------------------------------------------------------------------------------------------------------------
+
+SEQUENTIAL VERSION:
+Time (s)   | Colors     | Version   
+0.45150    | 86         | Sequential
+
+HTM VERSIONS:
+Threads  | Time (s)   | Colors     | Success Rate | Aborts   | Conflicts | Speedup 
+1        | 0.352383   | 83         | 0%           | 0        | 0        | 1.28x   
+2        | 0.289184   | 84         | 0%           | 0        | 0        | 1.56x   
+4        | 0.259513   | 83         | 0%           | 0        | 0        | 1.74x   
+8        | 0.305855   | 84         | 0%           | 0        | 0        | 1.48x   
+16       | 0.306388   | 84         | 0%           | 0        | 0        | 1.47x   
+32       | 0.308696   | 83         | 0%           | 0        | 0        | 1.46x   
+64       | 0.309946   | 83         | 0%           | 0        | 0        | 1.46x   
+128      | 0.308807   | 84         | 0%           | 0        | 0        | 1.46x   
+256      | 0.308772   | 83         | 0%           | 0        | 0        | 1.46x   
+
+TSX STATISTICS (Last Run with 256 threads):
+Transaction statistics: 0 successful, 0 aborted
+Optimized TSX coloring completed in 0.308772 seconds
+TSX Transaction Statistics:
+  Success rate: 0%
+Color distribution: Color 0: 710 vertices, Color 1: 710 vertices, Color 2: 702 vertices, Color 3: 710 vertices, Color 4: 711 vertices, ...
+Conflict resolution stats: 0 total conflicts, 0 max conflicts per vertex
+TSX Transaction Statistics:
+  Success rate: 0%
+Color distribution: Color 0: 710 vertices, Color 1: 710 vertices, Color 2: 702 vertices, Color 3: 710 vertices, Color 4: 711 vertices, ...
+Conflict resolution stats: 0 total conflicts, 0 max conflicts per vertex
+Conflict resolution stats: 0 total conflicts, 0 max conflicts per vertex
+Coloring is valid
+---------------------------------------------------------------------------------------------------------------------------------------------
+                                                     BENCHMARKING FILE: corner-50000.txt
+---------------------------------------------------------------------------------------------------------------------------------------------
+
+SEQUENTIAL VERSION:
+Time (s)   | Colors     | Version   
+0.17899    | 1000       | Sequential
+
+HTM VERSIONS:
+Threads  | Time (s)   | Colors     | Success Rate | Aborts   | Conflicts | Speedup 
+1        | 0.100755   | 1000       | 0%           | 0        | 0        | 1.78x   
+2        | 0.100858   | 1000       | 0%           | 0        | 0        | 1.77x   
+4        | 0.0787218  | 1005       | 0%           | 0        | 5        | 2.27x   
+8        | 0.047487   | 1013       | 0%           | 0        | 13       | 3.77x   
+16       | 0.0473754  | 1006       | 0%           | 0        | 6        | 3.78x   
+32       | 0.0469842  | 1010       | 0%           | 0        | 10       | 3.81x   
+64       | 0.047086   | 1007       | 0%           | 0        | 7        | 3.80x   
+128      | 0.0468628  | 1015       | 0%           | 0        | 15       | 3.82x   
+256      | 0.046871   | 1011       | 0%           | 0        | 11       | 3.82x   
+
+TSX STATISTICS (Last Run with 256 threads):
+Transaction statistics: 0 successful, 0 aborted
+Iteration 1: Found 11 conflicts
+Optimized TSX coloring completed in 0.046871 seconds
+TSX Transaction Statistics:
+  Success rate: 0%
+Color distribution: Color 0: 2475 vertices, Color 1: 2468 vertices, Color 2: 2482 vertices, Color 3: 2485 vertices, Color 4: 2468 vertices, ...
+TSX Transaction Statistics:
+  Success rate: 0%
+Color distribution: Color 0: 2475 vertices, Color 1: 2468 vertices, Color 2: 2482 vertices, Color 3: 2485 vertices, Color 4: 2468 vertices, ...
+Conflict resolution stats: 0 total conflicts, 0 max conflicts per vertex
+Conflict resolution stats: 0 total conflicts, 0 max conflicts per vertex
+Coloring is valid
+---------------------------------------------------------------------------------------------------------------------------------------------
+                                                     BENCHMARKING FILE: sparse-50000.txt
+---------------------------------------------------------------------------------------------------------------------------------------------
+
+SEQUENTIAL VERSION:
+Time (s)   | Colors     | Version   
+0.07091    | 18         | Sequential
+
+HTM VERSIONS:
+Threads  | Time (s)   | Colors     | Success Rate | Aborts   | Conflicts | Speedup 
+1        | 0.0461522  | 16         | 84.2105%     | 3        | 0        | 1.54x   
+2        | 0.0349602  | 20         | 76.1905%     | 5        | 4        | 2.03x   
+4        | 0.019997   | 22         | 69.2308%     | 8        | 6        | 3.55x   
+8        | 0.0168313  | 36         | 50%          | 17       | 20       | 4.21x   
+16       | 0.0166703  | 32         | 35.1852%     | 35       | 16       | 4.25x   
+32       | 0.0168159  | 33         | 46.6667%     | 16       | 17       | 4.22x   
+64       | 0.0169195  | 41         | 46.875%      | 17       | 25       | 4.19x   
+128      | 0.0166752  | 29         | 35.8491%     | 34       | 13       | 4.25x   
+256      | 0.0166731  | 43         | 45.4545%     | 18       | 27       | 4.25x   
+
+TSX STATISTICS (Last Run with 256 threads):
+Transaction statistics: 15 successful, 18 aborted
+Iteration 1: Found 27 conflicts
+Optimized TSX coloring completed in 0.0166731 seconds
+TSX Transaction Statistics:
+  Success rate: 45.4545%
+Color distribution: Color 0: 4111 vertices, Color 1: 4064 vertices, Color 2: 4118 vertices, Color 3: 4124 vertices, Color 4: 4115 vertices, ...
+TSX Transaction Statistics:
+  Success rate: 45.4545%
+Color distribution: Color 0: 4111 vertices, Color 1: 4064 vertices, Color 2: 4118 vertices, Color 3: 4124 vertices, Color 4: 4115 vertices, ...
+Conflict resolution stats: 0 total conflicts, 0 max conflicts per vertex
+Conflict resolution stats: 0 total conflicts, 0 max conflicts per vertex
+Coloring is valid
